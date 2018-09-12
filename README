@@ -2,5 +2,6 @@ Docker container for ansible based on Fedora with systemd
 
 Run command :
 ```
-docker run -it -v /sys/fs/cgroup:/sys/fs/cgroup:ro --privileged remyj38/fedora-ansible /bin/bash
+docker run -it -v /sys/fs/cgroup:/sys/fs/cgroup:ro --privileged --name fedora-ansible remyj38/fedora-ansible
+docker exec -it fedora-ansible bash
 ```
