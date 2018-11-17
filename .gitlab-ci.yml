@@ -1,0 +1,110 @@
+image: docker:latest
+
+services:
+  - docker:dind
+
+stages:
+  - build
+  - test
+  - deploy
+
+variables:
+  image_name: "nginx"
+  docker_namespace: "remyj38"
+  tags_files: "tags"
+
+before_script:
+  - docker login -u "$DOCKER_USER" -p "$DOCKER_PASSWORD"
+  - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+  - "[[ -d $tags_files ]] || mkdir $tags_files"
+
+build-1.14:
+  artifacts:
+    expire_in: 1 day
+    paths:
+      - image-*.tar
+      - $tags_files/
+  only:
+    - nginx
+  script:
+    - docker build --pull 1.14-alpine/ | tee output.log
+    - image_id=`cat output.log | tail -n1 | awk '{print $(NF)}'`
+    - echo "$CI_REGISTRY_IMAGE/$image_name:stable-alpine" > "$tags_files/$image_id"
+    - echo "$CI_REGISTRY_IMAGE/$image_name:1.14-alpine" >> "$tags_files/$image_id"
+    - echo "$docker_namespace/$image_name:stable-alpine" >> "$tags_files/$image_id"
+    - echo "$docker_namespace/$image_name:1.14-alpine" >> "$tags_files/$image_id"
+    - docker save -o "image-$image_id.tar" "$image_id"
+  stage: build
+
+build-1.15:
+  artifacts:
+    expire_in: 1 day
+    paths:
+      - image-*.tar
+      - $tags_files/
+  only:
+    - nginx
+  stage: build
+  script:
+    - docker build --pull 1.15-alpine/ | tee output.log
+    - image_id=`cat output.log | tail -n1 | awk '{print $(NF)}'`
+    - echo "$CI_REGISTRY_IMAGE/$image_name:latest" > "$tags_files/$image_id"
+    - echo "$CI_REGISTRY_IMAGE/$image_name:1.15-alpine" >> "$tags_files/$image_id"
+    - echo "$docker_namespace/$image_name:latest" >> "$tags_files/$image_id"
+    - echo "$docker_namespace/$image_name:1.15-alpine" >> "$tags_files/$image_id"
+    - docker save -o "image-$image_id.tar" "$image_id"
+
+test:
+  artifacts:
+    expire_in: 1 day
+    paths:
+      - image-*.tar
+      - $tags_files/
+  dependencies:
+    - build-1.14
+    - build-1.15
+  only:
+    - nginx
+  script:
+    - cd $tags_files
+      # Load images
+    - for image_id in *; do
+        echo "Loading $image_id";
+        docker load -q -i "../image-$image_id.tar";
+      done
+      # Show DHkey md5sum
+    - for image_id in *; do
+        echo "DHKey md5sum on $image_id";
+        docker run "$image_id" md5sum /etc/nginx/ssl/dhparam.pem;
+      done
+  stage: test
+  when: on_success
+
+deploy:
+  dependencies:
+    - test
+  only:
+    - nginx
+  script:
+    - cd $tags_files
+      # Load images
+    - for image_id in *; do
+        echo "Loading $image_id";
+        docker load -q -i "../image-$image_id.tar";
+      done
+      # Tag images
+    - for image_id in *; do
+        while read tag; do
+          docker tag "$image_id" "$tag";
+        done <"$image_id";
+      done
+      # Push images
+    - for image_id in *; do
+        while read tag; do
+          echo "Pushing $tag";
+          docker push "$tag";
+        done <$image_id;
+      done
+  stage: deploy
+  when: on_success
+
