@@ -6,3 +6,4 @@ Visit branches to view docker files.
 
 - Fedora-ansible: Docker container for ansible based on Fedora with systemd
 - Latex: Latex image for building moderncv and more basic latex documents
+- Nginx: Nginx image based on official release with Diffie-Hellman key generation
